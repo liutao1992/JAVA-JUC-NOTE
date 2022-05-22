@@ -415,28 +415,6 @@ private final boolean parkAndCheckInterrupt() {
       }
   }
 
-  // 唤醒head节点后不为cancel的非null节点
-  private void unparkSuccessor(Node node) {
-      int ws = node.waitStatus;
-      // 如果node.waitStatus < 0 ，将其设置为0(初始状态)
-      if (ws < 0)
-          compareAndSetWaitStatus(node, ws, 0);
-  	// 获取node的后继节点
-      Node s = node.next;
-      // 如果后继节点为null或是cancel，循环查找直到不符合该条件的node
-      if (s == null || s.waitStatus > 0) {
-          s = null;
-          // 重点：从队尾往前找！！！！
-          for (Node t = tail; t != null && t != node; t = t.prev)
-              if (t.waitStatus <= 0)
-                  s = t;
-      }
-      // 找到不为cancel的非null节点
-      if (s != null)
-          // 唤醒对应的线程
-          LockSupport.unpark(s.thread);
-}
-
 ```
 
 ### 如何解锁
@@ -456,9 +434,11 @@ public void unlock() {
 ```java
 public final boolean release(int arg) {
     // 尝试释放锁:如果返回true，说明该锁没有被任何线程持有
+    // 则继续唤醒其他线程，抢锁。
     if (tryRelease(arg)) {
+        // 获取头结点
         Node h = head;
-        // 如果头节点不为null且不是初始状态
+        // 头结点不为空并且头结点的waitStatus不是初始化节点情况，解除线程挂起状态
         if (h != null && h.waitStatus != 0)
             // 唤醒头节点的后继节点
             unparkSuccessor(h);
@@ -469,6 +449,15 @@ public final boolean release(int arg) {
     return false;
 }
 ```
+
+>这里的判断条件为什么是h != null && h.waitStatus != 0？
+
+- h == null ==> 表示Head还没初始化。初始情况下，head == null，第一个节点入队，Head会被初始化一个虚拟节点。所以说，这里如果还没来得及入队，就会出现head == null 的情况。
+
+- h != null && waitStatus == 0 ==> 表明后继节点对应的线程仍在运行中，不需要唤醒。
+
+- h != null && waitStatus < 0 ==> 表明后继节点可能被阻塞了，需要唤醒。
+
 
 ### tryRelease
 
