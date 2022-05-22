@@ -357,10 +357,11 @@ private final boolean parkAndCheckInterrupt() {
 }
 ```
 
+
 > LockSupport.park()除了能够被unpark()唤醒，还会响应interrupt()打断，但是Lock锁不能响应中断，如果是unpark，会返回false，如果是interrupt则返回true。
 
-- shouldParkAfterFailedAcquire中取消节点是怎么生成的呢？什么时候会把一个节点的waitStatus设置为-1？
-- 是在什么时间释放节点通知到被挂起的线程呢？
+
+![独占锁获取执行流程](./独占锁获取执行流程.png)
 
 ### cancelAcquire
 
