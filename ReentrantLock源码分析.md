@@ -18,6 +18,39 @@
 | status = 0  | 表示有一个线程持有锁，exclusiveOwnerThread = 该线程 |
 | status > 1  | 表示该线程重入了该锁 |
 
+### 伪代码实现
+```java
+
+ReentrantLock lock = new ReentrantLock(false);//false为非公平锁，true为公平锁
+3个线程
+T0 T1 T2
+lock.lock() //加锁
+    while(true){
+        if（cas加锁成功){//cas->比较与交换compare and swap，
+            break;跳出循环
+        }
+        HashSet，LikedQueued(),
+        HashSet.add(Thread)
+            LikedQueued.put(Thread)
+        // 进行阻塞。
+        LockSupport.park();
+        
+        
+    }
+    
+    T0获取锁
+    xxxx业务逻辑
+    xxxxx业务逻辑
+    
+lock.unlock() //解锁
+Thread  t= HashSet.get()
+Thread  t = LikedQueued.take();
+// 唤醒指定的线程t继续循环
+LockSupport.unpark(t)；
+
+```
+
+
 ### AQS具备特性
 
 阻塞等待队列 共享/独占 公平/非公平 可重入 允许中断
@@ -50,7 +83,7 @@ waitStatus有下面几个枚举值：
 
 |  字段和属性值   | 含义  |
 |  ----  | ----  |
-| SIGNAL = -1  | 表示线程已经准备好了，等待资源释放去获取锁。|
+| SIGNAL = -1  | 表示线程可被唤醒，等待资源释放去获取锁。|
 | CANCELLED = 1 | 由于超时或者中断，线程获取锁的请求取消了，节点一旦变成此状态就不会再变化。 |
 | CONDITION = -2  | 表示节点处于等待队列中，等待被唤醒。 |
 |CONDITION = -3|只有当前线程处于SHARED情况下，该字段才会使用，用于共享锁的获取。|
@@ -78,7 +111,7 @@ public class Test {
 
 ### 公平锁与非公平锁
 
-```
+```java
 // 非公平锁实现
 static final class NonfairSync extends Sync {
 	final void lock() {
@@ -105,7 +138,7 @@ static final class FairSync extends Sync {
 
 ### acquire
 
-```
+```java
 // 如果第一次获取锁失败，说明此时有其他线程持有锁，所以执行acquire
 public final void acquire(int arg) {
     if (!tryAcquire(arg) &&
@@ -117,7 +150,7 @@ public final void acquire(int arg) {
 
 ### tryAcquire
 
-```
+```java
 // 调用非公平锁的tryAcquire，再一次尝试去获取锁
 protected final boolean tryAcquire(int acquires) {
     return nonfairTryAcquire(acquires);
@@ -169,7 +202,7 @@ protected final boolean tryAcquire(int acquires) {
 
 ### hasQueuedPredecessors
 
-```
+```java
     // 如果当前线程前面有一个排队的线程，则为 true ；如果目前线程位于队列的头部或队列为空，则 false 
     public final boolean hasQueuedPredecessor(){
         Node t = tail;
@@ -188,7 +221,7 @@ protected final boolean tryAcquire(int acquires) {
 
 当执行Acquire(1)时，会通过tryAcquire获取锁。在这种情况下，如果获取锁失败，就会调用addWaiter加入到等待队列中去，具体实现方法如下：
 
-```
+```java
 private Node addWaiter(Node mode) {
         // 通过当前的线程和锁模式新建一个节点,并将该节点设置为新的尾结点
         Node node = new Node(Thread.currentThread(), mode);
@@ -212,7 +245,7 @@ private Node addWaiter(Node mode) {
 
 如果Pred指针是Null（说明等待队列中没有元素），就需要看一下Enq的方法。
 
-```
+```java
 // 循环执行插入操作，直到插入队尾成功
 private Node enq(final Node node) {
     for (;;) {
@@ -241,7 +274,7 @@ private Node enq(final Node node) {
 
 上文解释了addWaiter方法，这个方法其实就是把对应的线程以Node的数据结构形式加入到双端队列里，返回的是一个包含该线程的Node。而这个Node会作为参数，进入到acquireQueued方法中。acquireQueued方法可以对排队中的线程进行“获锁”操作。总的来说，一个线程获取锁失败了，被放入等待队列，acquireQueued会把放入队列中的线程不断去获取锁，直到获取成功或者不再需要获取（中断）。
 
-```
+```java
 // 至此node已经插入队列成功，并返回
 final boolean acquireQueued(final Node node, int arg) {
         // 标记是否成功拿到资源
@@ -269,8 +302,8 @@ final boolean acquireQueued(final Node node, int arg) {
                     interrupted = true;
             }
         } finally {
+            // 若是正常结束，failed则为false；若是执行期间发生异常，failed 为true 则执行cancelAcquire
             if (failed)
-                // 在执行acquireQueued期间，发生异常，则执行cancelAcquire
                 cancelAcquire(node);
         }
     }
@@ -278,7 +311,7 @@ final boolean acquireQueued(final Node node, int arg) {
 
 ### shouldParkAfterFailedAcquire
 
-```
+```java
 // 判断获取锁失败之后是否需要park
 private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         // 获取node前驱节点的waitStatus，默认情况下值为0
@@ -305,7 +338,7 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
 
 ### parkAndCheckInterrupt
 
-```
+```java
 // 将线程挂起并检查是否被中断
 private final boolean parkAndCheckInterrupt() {
     // 挂机当前线程，不会往下执行了
@@ -325,7 +358,7 @@ private final boolean parkAndCheckInterrupt() {
 
 通过cancelAcquire方法，将Node的状态标记为CANCELLED。接下来，我们逐行来分析这个方法的原理：
 
-```
+```java
 // 节点取消获取锁
   private void cancelAcquire(Node node) {
       // 忽略不存在的node
@@ -401,7 +434,7 @@ private final boolean parkAndCheckInterrupt() {
 
 ### unlock
 
-```
+```java
 public void unlock() {
 	sync.release(1);
 }
@@ -409,7 +442,7 @@ public void unlock() {
 
 ### release
 
-```
+```java
 public final boolean release(int arg) {
     // 尝试释放锁:如果返回true，说明该锁没有被任何线程持有
     if (tryRelease(arg)) {
@@ -428,7 +461,7 @@ public final boolean release(int arg) {
 
 ### tryRelease
 
-```
+```java
 protected final boolean tryRelease(int releases) {
     // 减少可重入次数
     int c = getState() - releases;
@@ -447,7 +480,7 @@ protected final boolean tryRelease(int releases) {
 
 ### unparkSuccessor
 
-```
+```java
 // 唤醒head节点后不为cancel的非null节点
   private void unparkSuccessor(Node node) {
       int ws = node.waitStatus;
