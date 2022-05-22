@@ -360,6 +360,7 @@ private final boolean parkAndCheckInterrupt() {
 
 > LockSupport.park()除了能够被unpark()唤醒，还会响应interrupt()打断，但是Lock锁不能响应中断，如果是unpark，会返回false，如果是interrupt则返回true。
 
+### 独占锁获取执行流程
 
 ![独占锁获取执行流程](./独占锁获取执行流程.png)
 
