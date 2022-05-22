@@ -320,7 +320,9 @@ final boolean acquireQueued(final Node node, int arg) {
 ```java
 // 判断获取锁失败之后是否需要park
 private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
-        // 获取node前驱节点的waitStatus，默认情况下值为0
+        // Node的节点第一次进入该方法的时候，node前驱节点的waitStatus的值都为0
+        // 因此都会执行该方法 ==> compareAndSetWaitStatus(pred, ws, Node.SIGNAL)
+        // 修改成sinal=-1,标记处可以被唤醒.
         int ws = pred.waitStatus;
         // 如果是signal，表示线程可被唤醒
         if (ws == Node.SIGNAL)
