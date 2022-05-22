@@ -485,11 +485,12 @@ protected final boolean tryRelease(int releases) {
 ```java
 // 唤醒head节点后不为cancel的非null节点
   private void unparkSuccessor(Node node) {
+      // 获取头节点的状态
       int ws = node.waitStatus;
       // 如果node.waitStatus < 0 ，将其设置为0(初始状态)
       if (ws < 0)
           compareAndSetWaitStatus(node, ws, 0);
-  	// 获取node的后继节点
+  	// 获取node的后继节点，也就是头节点后第一个有效节点
       Node s = node.next;
       // 如果后继节点为null或是cancel，循环查找直到不符合该条件的node
       if (s == null || s.waitStatus > 0) {
@@ -499,7 +500,7 @@ protected final boolean tryRelease(int releases) {
               if (t.waitStatus <= 0)
                   s = t;
       }
-      // 找到不为cancel的非null节点
+      // 找到不为cancel的非null节点，找到后并将头节点指向该节点
       if (s != null)
           // 唤醒对应的线程
           LockSupport.unpark(s.thread);
