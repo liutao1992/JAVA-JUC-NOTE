@@ -10,7 +10,6 @@
 
 - 需要有一个队列维护所有阻塞的线程。这个队列也必须是线程安全的无锁队列，也需要用到CAS。
 
-
 > 在AQS中，state取值不仅可以是0、1，还可以大于1，就是为了支持锁的重入性。
 
 |  字段和属性值   | 含义  |
@@ -19,13 +18,20 @@
 | status = 0  | 表示有一个线程持有锁，exclusiveOwnerThread = 该线程 |
 | status > 1  | 表示该线程重入了该锁 |
 
+### AQS具备特性
 
-### AQS 原理概览
+阻塞等待队列 共享/独占 公平/非公平 可重入 允许中断
 
+### AQS原理概览
 
+AQS本质上是一种管程实现，其内部有一个双端队列，称为CLH队列。这个队列的主要特定是利用双向链表的操作特定（FIFO，先入先出）保证资源操作分配的公平性，利用双向链表的结构特定保证各个节点简的操作状态可知，利用Node节点所代表的线程的自旋操作方式提高资源操作权获取性能。
 
+AQS中实现的CLH队列有以下几个特定：
 
-### 源码分析
+- 所有状态正常的节点只能由队列头部离开队列。但是当CLH队列主动清理状态不正常的节点（CANCELLED状态的节点）时，这些状态不正常的节点不一定从队列头部离开。
+- CLH队列只能从尾部添加节点，由于存在多个线程同时要求添加节点的场景，因此CLH队列要解决的一个关键问题就是如何从尾部正确添加节点。
+- CLH队列在初始化完成的瞬间，其头节点引用head和尾结点引用tail指向同一个节点，这时这个节点没有任何实际意义。也就是说，真正被阻塞等待获取资源操作权的节点，至少是从CLH队列的第二个节点开始的，而不是从头节点开始。头节点引用head要么代表当前已经获取资源操作权的节点，要么没有实际意义。
+
 
 先来看下AQS中最基本的数据结构——Node，Node即为CLH变体队列中的节点。
 
@@ -44,13 +50,14 @@ waitStatus有下面几个枚举值：
 
 |  字段和属性值   | 含义  |
 |  ----  | ----  |
-| SIGNAL = -1  | 当前节点的线程如果释放了或取消了同步状态，将会将当前节点的状态标志位SINGAL，用于通知当前节点的下一节点，准备获取同步状态。 |
-| CANCELLED = 1 | 被中断或获取同步状态超时的线程将会被置为当前状态，且该状态下的线程不会再阻塞。 |
-| CONDITION = -2  | 当前节点在Condition中的等待队列上，其他线程调用了Condition的singal()方法后，该节点会从等待队列转移到AQS的同步队列中，等待获取同步锁。 |
-|CONDITION = -3|当前线程处在SHARED情况下，该字段才会使用|
-| 0  |当一个Node被初始化的时候的默认值 |
+| SIGNAL = -1  | 表示线程已经准备好了，等待资源释放去获取锁。|
+| CANCELLED = 1 | 由于超时或者中断，线程获取锁的请求取消了，节点一旦变成此状态就不会再变化。 |
+| CONDITION = -2  | 表示节点处于等待队列中，等待被唤醒。 |
+|CONDITION = -3|只有当前线程处于SHARED情况下，该字段才会使用，用于共享锁的获取。|
+| 0  | Node初始创建时默认为0 |
 
-### 通过ReentrantLock理解AQS
+### 源码分析：通过ReentrantLock理解AQS
+
 
 ```
 public class Test {
@@ -201,9 +208,9 @@ private Node addWaiter(Node mode) {
     }
 ```
 
-### Node enq(final Node node)
+### enq()
 
-如果Pred指针是Null（说明等待队列中没有元素），或者当前Pred指针和Tail指向的位置不同（说明被别的线程已经修改），就需要看一下Enq的方法。
+如果Pred指针是Null（说明等待队列中没有元素），就需要看一下Enq的方法。
 
 ```
 // 循环执行插入操作，直到插入队尾成功
@@ -263,6 +270,7 @@ final boolean acquireQueued(final Node node, int arg) {
             }
         } finally {
             if (failed)
+                // 在执行acquireQueued期间，发生异常，则执行cancelAcquire
                 cancelAcquire(node);
         }
     }
@@ -275,7 +283,7 @@ final boolean acquireQueued(final Node node, int arg) {
 private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         // 获取node前驱节点的waitStatus，默认情况下值为0
         int ws = pred.waitStatus;
-        // 如果是signal，说明前驱节点已经准备就绪,
+        // 如果是signal，说明前驱节点已经准备就绪 ？？？？？？？？？？？？？ 准备就绪干嘛？不是很理解！！！！！！！！！！！！！！
         if (ws == Node.SIGNAL)
             return true;
         // 通过枚举值我们知道waitStatus>0是取消状态
@@ -308,7 +316,7 @@ private final boolean parkAndCheckInterrupt() {
 }
 ```
 
-> 从队列中释放节点的疑虑打消了，那么又有新问题了：
+> LockSupport.park()除了能够被unpark()唤醒，还会响应interrupt()打断，但是Lock锁不能响应中断，如果是unpark，会返回false，如果是interrupt则返回true。
 
 - shouldParkAfterFailedAcquire中取消节点是怎么生成的呢？什么时候会把一个节点的waitStatus设置为-1？
 - 是在什么时间释放节点通知到被挂起的线程呢？
@@ -331,7 +339,7 @@ private final boolean parkAndCheckInterrupt() {
       while (pred.waitStatus > 0)
           node.prev = pred = pred.prev;
   
-      // 获取有效前继节点的后继节点
+      // 获取有效前驱节点的后继节点
       Node predNext = pred.next;
   
       // 设置node节点为cancel状态
@@ -387,9 +395,81 @@ private final boolean parkAndCheckInterrupt() {
 
 ```
 
+### 如何解锁
 
+我们已经剖析了加锁过程中的基本流程，接下来再对解锁的基本流程进行分析。由于ReentrantLock在解锁的时候，并不区分公平锁和非公平锁，所以我们直接看解锁的源码：
 
-> `addWaiter`本质上就是一个在双端链表添加尾节点的操作，需要注意的是，双端链表的头结点是一个无参构造函数的头结点。
+### unlock
+
+```
+public void unlock() {
+	sync.release(1);
+}
+```
+
+### release
+
+```
+public final boolean release(int arg) {
+    // 尝试释放锁:如果返回true，说明该锁没有被任何线程持有
+    if (tryRelease(arg)) {
+        Node h = head;
+        // 如果头节点不为null且不是初始状态
+        if (h != null && h.waitStatus != 0)
+            // 唤醒头节点的后继节点
+            unparkSuccessor(h);
+        // 唤醒的线程会重新从parkAndCheckInterrupt()方法中被unpark
+        // 然后继续新一轮的获取锁或者获取不到锁park的流程    
+        return true;
+    }
+    return false;
+}
+```
+
+### tryRelease
+
+```
+protected final boolean tryRelease(int releases) {
+    // 减少可重入次数
+    int c = getState() - releases;
+    if (Thread.currentThread() != getExclusiveOwnerThread())
+        throw new IllegalMonitorStateException();
+    boolean free = false;
+    // 如果持有线程全部释放，将当前独占锁所有线程设置为null，并更新state
+    if (c == 0) {
+        free = true;
+        setExclusiveOwnerThread(null);
+    }
+    setState(c);
+    return free;
+}
+```
+
+### unparkSuccessor
+
+```
+// 唤醒head节点后不为cancel的非null节点
+  private void unparkSuccessor(Node node) {
+      int ws = node.waitStatus;
+      // 如果node.waitStatus < 0 ，将其设置为0(初始状态)
+      if (ws < 0)
+          compareAndSetWaitStatus(node, ws, 0);
+  	// 获取node的后继节点
+      Node s = node.next;
+      // 如果后继节点为null或是cancel，循环查找直到不符合该条件的node
+      if (s == null || s.waitStatus > 0) {
+          s = null;
+          // 重点：从队尾往前找！！！！
+          for (Node t = tail; t != null && t != node; t = t.prev)
+              if (t.waitStatus <= 0)
+                  s = t;
+      }
+      // 找到不为cancel的非null节点
+      if (s != null)
+          // 唤醒对应的线程
+          LockSupport.unpark(s.thread);
+}
+```
 
 [从ReentrantLock的实现看AQS的原理及应用](https://tech.meituan.com/2019/12/05/aqs-theory-and-apply.html)
 
