@@ -313,6 +313,8 @@ final boolean acquireQueued(final Node node, int arg) {
     }
 ```
 
+> 线程一旦进入acquireQueued，就会被无限期阻塞，即使有其他线程调用interrupt()函数也不能将其唤醒，除非有其他线程释放了锁，并且该线程拿到了锁，才会从acquireQueued中返回。
+
 ### shouldParkAfterFailedAcquire
 
 ```java
@@ -342,8 +344,6 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
 }
 ```
 
->  waitestate = 0 - > -1 head节点为什么改到-1，因为持有锁的线程T0在释放锁的时候，得判断head节点的waitestate是否!=0,如果！=0成立，会再把waitstate = -1->0,要想唤醒排队的第一个线程T1，T1被唤醒再接着走循环，去抢锁，可能会再失败（在非公平锁场景下），此时可能有线程T3持有了锁！T1可能再次被阻塞，head的节点状态需要再一次经历两轮循环：waitState = 0 -> -1
-
 ### parkAndCheckInterrupt
 
 ```java
@@ -357,8 +357,7 @@ private final boolean parkAndCheckInterrupt() {
 }
 ```
 
-
-> LockSupport.park()除了能够被unpark()唤醒，还会响应interrupt()打断，但是Lock锁不能响应中断，如果是unpark，会返回false，如果是interrupt则返回true。
+> LockSupport.park()除了能够被unpark()唤醒，还会响应interrupt()打断，但是Lock锁不能响应中断，如果是unpark，会返回false，如果是interrupt则返回true。也因为LockSupport.park() 可能被中断唤醒，acquireQueued()函数才写了一个for死循环。唤醒之后，如果发现自己排在队列头部，就去拿锁；如果拿不到，则再次自己阻塞自己。不断重复此过程，直到拿到锁。
 
 ### 独占锁获取执行流程
 
@@ -483,10 +482,12 @@ protected final boolean tryRelease(int releases) {
         free = true;
         setExclusiveOwnerThread(null);
     }
+    // 关键点：没有使用CAS，而直接使用set。因为是排它锁，只有一个线程能调减state值
     setState(c);
     return free;
 }
 ```
+> 在上面的代码中有一个关键点：因为是排它锁，只有已持有锁的线程才有资格调佣release(),这意味着没有其他线程与之争抢，所以，在上面的tryRelease()函数中,对state值的修改，不需要CAS操作，直接减1即可。但对于读写锁中的读锁，就不一样了。
 
 ### unparkSuccessor
 
@@ -513,6 +514,8 @@ protected final boolean tryRelease(int releases) {
           LockSupport.unpark(s.thread);
 }
 ```
+
+>  waitestate = 0 - > -1 head节点为什么改到-1，因为持有锁的线程T0在释放锁的时候，得判断head节点的waitestate是否!=0,如果！=0成立，会再把waitstate = -1->0,要想唤醒排队的第一个线程T1，T1被唤醒再接着走循环，去抢锁，可能会再失败（在非公平锁场景下），此时可能有线程T3持有了锁！T1可能再次被阻塞，head的节点状态需要再一次经历两轮循环：waitState = 0 -> -1
 
 参考链接
 
