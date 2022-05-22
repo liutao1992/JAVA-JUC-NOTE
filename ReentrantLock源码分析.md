@@ -29,8 +29,7 @@ lock.lock() //加锁
         if（cas加锁成功){//cas->比较与交换compare and swap，
             break;跳出循环
         }
-        HashSet，LikedQueued(),
-        HashSet.add(Thread)
+        LikedQueued()
         LikedQueued.put(Thread)
         // 进行阻塞。
         LockSupport.park();
@@ -43,7 +42,6 @@ lock.lock() //加锁
     xxxxx业务逻辑
     
 lock.unlock() //解锁
-Thread  t= HashSet.get()
 Thread  t = LikedQueued.take();
 // 唤醒指定的线程t继续循环
 LockSupport.unpark(t)；
@@ -83,10 +81,10 @@ waitStatus有下面几个枚举值：
 
 |  字段和属性值   | 含义  |
 |  ----  | ----  |
-| SIGNAL = -1  | 表示线程可被唤醒，等待资源释放去获取锁。|
-| CANCELLED = 1 | 由于超时或者中断，线程获取锁的请求取消了，节点一旦变成此状态就不会再变化。 |
+| SIGNAL = -1  | 表示线程可被唤醒。|
+| CANCELLED = 1 | 表示出现异常，中断引起的，需要废弃结束。 |
 | CONDITION = -2  | 表示节点处于等待队列中，等待被唤醒。 |
-|CONDITION = -3|只有当前线程处于SHARED情况下，该字段才会使用，用于共享锁的获取。|
+| CONDITION = -3|只有当前线程处于SHARED情况下，该字段才会使用，用于共享锁的获取。|
 | 0  | Node初始创建时默认为0 |
 
 ### 源码分析：通过ReentrantLock理解AQS
@@ -182,6 +180,11 @@ final boolean nonfairTryAcquire(int acquires) {
     }
     return false;
 }
+
+>Q: 为什么有的地方使用setState()，有的地方使用CAS？
+
+A: 因为使用setState()方法的前提是已经获取了锁，使用了CAS的是因为此时还没有获取锁。
+
 // 公平锁的tryAcquire实现
 protected final boolean tryAcquire(int acquires) {
     ...
@@ -236,7 +239,7 @@ private Node addWaiter(Node mode) {
         }
         // 尾节点为null 或 插入尾节点失败
         enq(node);
-        // 返回尾结点
+        // 返回当前节点
         return node;
     }
 ```
@@ -275,7 +278,7 @@ private Node enq(final Node node) {
 上文解释了addWaiter方法，这个方法其实就是把对应的线程以Node的数据结构形式加入到双端队列里，返回的是一个包含该线程的Node。而这个Node会作为参数，进入到acquireQueued方法中。acquireQueued方法可以对排队中的线程进行“获锁”操作。总的来说，一个线程获取锁失败了，被放入等待队列，acquireQueued会把放入队列中的线程不断去获取锁，直到获取成功或者不再需要获取（中断）。
 
 ```java
-// 至此node已经插入队列成功，并返回
+// 至此node已经插入队列成功，并返回。线程要开始阻塞了
 final boolean acquireQueued(final Node node, int arg) {
         // 标记是否成功拿到资源
         boolean failed = true;
@@ -285,7 +288,8 @@ final boolean acquireQueued(final Node node, int arg) {
             for (;;) {
                 // 返回该节点的前驱节点
                 final Node p = node.predecessor();
-                // 若当前节点的前驱节点为头节点，则node尝试去获取锁
+                // 节点阻塞之前，再尝试获取一次锁
+                // 若当前节点的前驱节点为头节点，则node再次尝试去获取锁
                 if (p == head && tryAcquire(arg)) {
                     // 获取锁成功，设置头节点为node，并清空thread和prev属性
                     setHead(node);
@@ -316,7 +320,7 @@ final boolean acquireQueued(final Node node, int arg) {
 private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         // 获取node前驱节点的waitStatus，默认情况下值为0
         int ws = pred.waitStatus;
-        // 如果是signal，说明前驱节点已经准备就绪 ？？？？？？？？？？？？？ 准备就绪干嘛？不是很理解！！！！！！！！！！！！！！
+        // 如果是signal，表示线程可被唤醒
         if (ws == Node.SIGNAL)
             return true;
         // 通过枚举值我们知道waitStatus>0是取消状态
@@ -327,6 +331,8 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
             } while (pred.waitStatus > 0);
             pred.next = node;
         } else {
+             // 首先第1轮循环、修改head的状态，修改成sinal=-1标记处可以被唤醒.
+             // 第2轮循环，阻塞线程，并且需要判断线程是否是有中断信号唤醒的！
              // 设置前驱节点等待状态为SIGNAL,设置signal的作用是什么？
              // 在解锁的时候只有head!=null且为signal状态才会唤醒head的下个节点
              // 如果pred状态设置成功，第二次就会进入ws == Node.SIGNAL，返回true
@@ -335,6 +341,8 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         return false;
 }
 ```
+
+>  waitestate = 0 - > -1 head节点为什么改到-1，因为持有锁的线程T0在释放锁的时候，得判断head节点的waitestate是否!=0,如果！=0成立，会再把waitstate = -1->0,要想唤醒排队的第一个线程T1，T1被唤醒再接着走循环，去抢锁，可能会再失败（在非公平锁场景下），此时可能有线程T3持有了锁！T1可能再次被阻塞，head的节点状态需要再一次经历两轮循环：waitState = 0 -> -1
 
 ### parkAndCheckInterrupt
 
