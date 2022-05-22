@@ -438,7 +438,7 @@ public final boolean release(int arg) {
     if (tryRelease(arg)) {
         // 获取头结点
         Node h = head;
-        // 头结点不为空并且头结点的waitStatus不是初始化节点情况，解除线程挂起状态
+        // 头结点不为空并且头结点的waitStatus不是初始化节点情况，唤醒其他已经阻塞的线程（解除线程挂起状态）
         if (h != null && h.waitStatus != 0)
             // 唤醒头节点的后继节点
             unparkSuccessor(h);
