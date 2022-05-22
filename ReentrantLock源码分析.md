@@ -306,7 +306,7 @@ final boolean acquireQueued(final Node node, int arg) {
                     interrupted = true;
             }
         } finally {
-            // 若是正常结束，failed则为false；若是执行期间发生异常，failed 为true 则执行cancelAcquire
+            // 若是正常结束，failed则为false；若是执行期间发生异常，failed 为true 则执行cancelAcquire, 标注当前节点的生命状态为canceld
             if (failed)
                 cancelAcquire(node);
         }
