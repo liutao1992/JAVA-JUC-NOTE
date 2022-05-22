@@ -31,7 +31,7 @@ lock.lock() //加锁
         }
         HashSet，LikedQueued(),
         HashSet.add(Thread)
-            LikedQueued.put(Thread)
+        LikedQueued.put(Thread)
         // 进行阻塞。
         LockSupport.park();
         
