@@ -494,7 +494,7 @@ protected final boolean tryRelease(int releases) {
       // 如果后继节点为null或是cancel，循环查找直到不符合该条件的node
       if (s == null || s.waitStatus > 0) {
           s = null;
-          // 重点：从队尾往前找！！！！
+          // 重点：从队尾往前找！！！！ 找到最靠近头节点的一个有效节点，之所以这样，是因为我们使用的数据结构为FIFO
           for (Node t = tail; t != null && t != node; t = t.prev)
               if (t.waitStatus <= 0)
                   s = t;
