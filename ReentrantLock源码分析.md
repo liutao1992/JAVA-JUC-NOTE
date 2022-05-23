@@ -349,9 +349,9 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
 ### parkAndCheckInterrupt
 
 ```java
-// 将线程挂起并检查是否被中断
+// 将线程阻塞并检查是否被中断
 private final boolean parkAndCheckInterrupt() {
-    // 挂机当前线程，不会往下执行了
+    //调用park()使线程进入waiting状态
     LockSupport.park(this);
     // 往下执行的条件: unpark(t)或被中断
     // 返回中断状态(并清空中断状态)
@@ -487,7 +487,7 @@ protected final boolean tryRelease(int releases) {
   private void unparkSuccessor(Node node) {
       // 获取头节点的状态
       int ws = node.waitStatus;
-      // 如果node.waitStatus < 0 ，将其设置为0(初始状态)
+      // 如果node.waitStatus < 0 ，将其设置为0(初始状态)，若是多个线程竞争，允许失败。
       if (ws < 0)
           compareAndSetWaitStatus(node, ws, 0);
   	// 获取node的后继节点，也就是头节点后第一个有效节点
@@ -511,9 +511,10 @@ protected final boolean tryRelease(int releases) {
 
 参考链接
 
+[reentrantlock实现](http://ifeve.com/java%e5%b9%b6%e5%8f%91%e4%b9%8baqs%e8%af%a6%e8%a7%a3/#more-44669)
+
 [reentrantlock实现](https://leejay.top/post/reentrantlock/)
 
 [从ReentrantLock的实现看AQS的原理及应用](https://tech.meituan.com/2019/12/05/aqs-theory-and-apply.html)
-
 
 [The java.util.concurrent Synchronizer Framework](https://gonearewe.github.io/2021/04/10/AQS-%E6%A1%86%E6%9E%B6%E8%AE%BA%E6%96%87%E7%BF%BB%E8%AF%91-The-java.util.concurrent-Synchronizer-Framework/)
