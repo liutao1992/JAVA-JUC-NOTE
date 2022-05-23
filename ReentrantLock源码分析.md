@@ -351,10 +351,11 @@ private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
 ```java
 // 将线程阻塞并检查是否被中断
 private final boolean parkAndCheckInterrupt() {
-    //调用park()使线程进入waiting状态
+    //调用park(),自己把自己阻塞起来，使自己进入waiting状态，直到被其他线程唤醒，该函数返回。
+    // park() 函数返回有两种情况：
+    // 情况1：其他线程调用了unpark(Thread t)
+    // 情况2：其他线程调用了t.interrupt().这里要注意的是，lock不能响应中断，但LockSupport会响应中断。
     LockSupport.park(this);
-    // 往下执行的条件: unpark(t)或被中断
-    // 返回中断状态(并清空中断状态)
     return Thread.interrupted();
 }
 ```
