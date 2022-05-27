@@ -239,5 +239,9 @@ final boolean transferForSignal(Node node) {
 
 ```
 
+> [wait/notifyAll与Condition的区别)(https://juejin.cn/post/6906295656520876039)
+
+
+
 
 
